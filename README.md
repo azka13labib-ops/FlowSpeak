@@ -146,7 +146,6 @@ flowSpeak/
 | Layer | Teknologi |
 |---|---|
 | Mobile | NativeScript 9.x (TypeScript) |
-| Styling | Neobrutalism + Glassmorphism CSS |
 | Backend | Node.js + Express 5 |
 | STT | Whisper.cpp `tiny.en` (CPU-only) |
 | NLP Eval | Ollama `llama3.2:1b` |
