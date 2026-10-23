@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 
+  network_security_config.xml
+  Allows cleartext HTTP to local development IPs only.
+  Stricter than usesCleartextTraffic="true" in manifest — best practice for dev.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

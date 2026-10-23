@@ -1,0 +1,203 @@
+/**
+ * FlowSpeak Backend — server.js
+ * Express API that bridges the NativeScript mobile app with:
+ *   - Whisper.cpp  (speech-to-text)  at http://127.0.0.1:8080
+ *   - Ollama LLM   (grammar eval)    at http://127.0.0.1:11434
+ */
+
+const express   = require('express');
+const multer    = require('multer');
+const axios     = require('axios');
+const FormData  = require('form-data');
+const fs        = require('fs');
+const path      = require('path');
+
+// ─── App Setup ───────────────────────────────────────────────────────────────
+
+const app  = express();
+const PORT = 3000;
+
+app.use(express.json());
+
+// ─── Multer – store uploads in /uploads, accept only audio files ─────────────
+
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
+
+const storage = multer.diskStorage({
+  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
+  filename:    (_req, file,  cb) => cb(null, `${Date.now()}-${file.originalname}`),
+});
+
+const audioFilter = (_req, file, cb) => {
+  const allowed = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/x-m4a'];
+  if (allowed.includes(file.mimetype) || file.originalname.match(/\.(wav|mp3|ogg|webm|m4a)$/i)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Unsupported audio format'), false);
+  }
+};
+
+const upload = multer({
+  storage,
+  fileFilter: audioFilter,
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB cap
+});
+
+// ─── Helper: garbage-collect a temp file safely ──────────────────────────────
+
+function cleanupFile(filePath) {
+  if (!filePath) return;
+  fs.unlink(filePath, (err) => {
+    if (err && err.code !== 'ENOENT') {
+      console.error(`[GC] Failed to delete ${filePath}:`, err.message);
+    } else {
+      console.log(`[GC] Deleted temp file: ${filePath}`);
+    }
+  });
+}
+
+// ─── POST /api/transcribe ────────────────────────────────────────────────────
+/**
+ * Accepts: multipart/form-data with field "audio"
+ * Returns: { transcript: string }
+ *
+ * Pipes the audio file to Whisper.cpp server, returns the raw transcript,
+ * then immediately deletes the local temp file (no disk residue).
+ */
+app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
+  const tempPath = req.file?.path;
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'No audio file received. Use field name "audio".' });
+  }
+
+  try {
+    console.log(`[Transcribe] Received: ${req.file.originalname} (${req.file.size} bytes)`);
+
+    // Build multipart payload for Whisper.cpp /inference endpoint
+    const form = new FormData();
+    form.append('file', fs.createReadStream(tempPath), {
+      filename: req.file.originalname,
+      contentType: req.file.mimetype,
+    });
+    // Whisper.cpp server-side options (adjust as needed)
+    form.append('temperature',   '0.0');
+    form.append('temperature_inc', '0.2');
+    form.append('response_format', 'json');
+
+    const whisperRes = await axios.post('http://127.0.0.1:8080/inference', form, {
+      headers: form.getHeaders(),
+      timeout: 60_000, // allow up to 60 s for slow CPU inference
+    });
+
+    // Whisper.cpp returns { text: "..." } in json mode
+    const transcript = (whisperRes.data?.text || '').trim();
+
+    console.log(`[Transcribe] Result: "${transcript.slice(0, 80)}..."`);
+    return res.json({ transcript });
+
+  } catch (err) {
+    console.error('[Transcribe] Error:', err.message);
+
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(502).json({ error: 'Whisper.cpp server is not running at http://127.0.0.1:8080' });
+    }
+    if (err.response) {
+      return res.status(502).json({ error: `Whisper.cpp returned ${err.response.status}`, detail: err.response.data });
+    }
+    return res.status(500).json({ error: err.message });
+
+  } finally {
+    // Always clean up — even if an error occurred
+    cleanupFile(tempPath);
+  }
+});
+
+// ─── POST /api/evaluate ──────────────────────────────────────────────────────
+/**
+ * Accepts: application/json { transcript: string }
+ * Returns: { score, corrections, vocabulary_tips } (parsed from Ollama)
+ *
+ * Sends the transcript to the local Ollama LLM for grammar/vocabulary
+ * evaluation and parses the structured JSON response.
+ */
+app.post('/api/evaluate', async (req, res) => {
+  const { transcript } = req.body;
+
+  if (!transcript || typeof transcript !== 'string' || transcript.trim() === '') {
+    return res.status(400).json({ error: 'Request body must include a non-empty "transcript" string.' });
+  }
+
+  const prompt = `You are a strict English tutor evaluating a student's speech transcript. Analyze the text for grammatical errors, vocabulary usage, and fluency. You MUST respond ONLY with a valid JSON object. Evaluate this transcript: '${transcript}'. Your JSON output must match this structure exactly: { "score": { "fluency": 0, "grammar": 0, "vocabulary": 0, "overall": 0 }, "corrections": [ { "original": "...", "fixed": "...", "explanation": "... (in Indonesian)" } ], "vocabulary_tips": [ "... (in Indonesian)" ] }`;
+
+  try {
+    console.log(`[Evaluate] Sending ${transcript.length} chars to Ollama...`);
+
+    const ollamaRes = await axios.post(
+      'http://127.0.0.1:11434/api/generate',
+      {
+        model:  'llama3.2:1b',
+        prompt,
+        stream: false,
+        format: 'json',
+      },
+      {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 120_000, // LLM on CPU can be slow — allow 2 min
+      }
+    );
+
+    // Ollama wraps the model's output in { response: "..." }
+    const rawResponse = ollamaRes.data?.response;
+
+    let evaluation;
+    try {
+      evaluation = JSON.parse(rawResponse);
+    } catch {
+      console.error('[Evaluate] Ollama returned non-JSON:', rawResponse);
+      return res.status(502).json({
+        error: 'Ollama returned an invalid JSON response.',
+        raw: rawResponse,
+      });
+    }
+
+    console.log('[Evaluate] Score:', evaluation?.score);
+    return res.json(evaluation);
+
+  } catch (err) {
+    console.error('[Evaluate] Error:', err.message);
+
+    if (err.code === 'ECONNREFUSED') {
+      return res.status(502).json({ error: 'Ollama is not running at http://127.0.0.1:11434' });
+    }
+    if (err.response) {
+      return res.status(502).json({ error: `Ollama returned ${err.response.status}`, detail: err.response.data });
+    }
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Health Check ─────────────────────────────────────────────────────────────
+
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', service: 'FlowSpeak API', version: '1.0.0' });
+});
+
+// ─── Global Error Handler ─────────────────────────────────────────────────────
+
+app.use((err, _req, res, _next) => {
+  if (err instanceof multer.MulterError) {
+    return res.status(400).json({ error: `Upload error: ${err.message}` });
+  }
+  console.error('[Unhandled]', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
+});
+
+// ─── Start ───────────────────────────────────────────────────────────────────
+
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`\n🎙️  FlowSpeak API running on http://0.0.0.0:${PORT}`);
+  console.log(`   POST /api/transcribe  →  Whisper.cpp @ http://127.0.0.1:8080`);
+  console.log(`   POST /api/evaluate    →  Ollama      @ http://127.0.0.1:11434\n`);
+});

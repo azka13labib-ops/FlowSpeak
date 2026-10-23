@@ -1,0 +1,8 @@
+node_modules/
+platforms/
+dist/
+hooks/
+uploads/
+*.log
+.DS_Store
+Thumbs.db

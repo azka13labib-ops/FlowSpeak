@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FlowSpeak — AndroidManifest.xml
+  Place this at: app/App_Resources/Android/src/main/AndroidManifest.xml
+-->
+<manifest
+  xmlns:android="http://schemas.android.com/apk/res/android"
+  package="com.ngodink.flowspeak">
+
+  <!-- Core permissions for audio recording and networking -->
+  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
+  <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+
+  <!-- Declare that mic is required (optional but good practice) -->
+  <uses-feature android:name="android.hardware.microphone" android:required="true"/>
+
+  <application
+    android:name="com.tns.NativeScriptApplication"
+    android:allowBackup="true"
+    android:icon="@drawable/icon"
+    android:label="@string/app_name"
+    android:theme="@style/AppTheme"
+    android:networkSecurityConfig="@xml/network_security_config"
+    android:usesCleartextTraffic="true">
+    <!-- usesCleartextTraffic = true allows HTTP to your local dev server -->
+
+    <activity
+      android:name="com.tns.NativeScriptActivity"
+      android:label="@string/title_activity_kimera"
+      android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout"
+      android:theme="@style/LaunchScreenTheme">
+
+      <meta-data android:name="SET_THEME_ON_LAUNCH" android:resource="@style/AppTheme"/>
+
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+
+    <activity android:name="com.tns.ErrorReportActivity"/>
+  </application>
+</manifest>

@@ -1,0 +1,21 @@
+{
+  "name": "flowspeak-backend",
+  "version": "1.0.0",
+  "description": "FlowSpeak Express API — bridges Whisper.cpp and Ollama",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "whisper": "whisper.cpp\\prebuilt\\Release\\whisper-server.exe -m whisper.cpp\\ggml-tiny.en.bin --host 127.0.0.1 --port 8080"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "axios": "^1.20.0",
+    "express": "^5.3.0",
+    "form-data": "^4.0.6",
+    "multer": "^2.5.0"
+  }
+}

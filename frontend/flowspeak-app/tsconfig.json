@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module":                 "commonjs",
+    "moduleResolution":       "node",
+    "target":                 "ES2017",
+    "lib":                    ["ES2017", "ES2018.Promise", "DOM"],
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata":  true,
+    "noEmitHelpers":          true,
+    "noEmitOnError":          true,
+    "declaration":            false,
+    "skipLibCheck":           true,
+    "noImplicitAny":          false,
+    "strictNullChecks":       false,
+    "baseUrl":                ".",
+    "paths":                  { "~/*": ["app/*"] }
+  },
+  "exclude": ["node_modules", "platforms", "hooks"]
+}
