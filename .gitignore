@@ -1,12 +1,32 @@
+# Dependencies
 node_modules/
+**/node_modules/
+
+# Mobile Platforms & Builds
 platforms/
-dist/
+**/platforms/
 hooks/
+**/hooks/
+dist/
+build/
+.gradle/
+**/.gradle/
+
+# Output packages
+*.apk
+*.aab
+*.dex
+
+# Backend & Temp
 uploads/
+**/uploads/
 *.log
 *.zip
 *.bin
 *.exe
+
+# IDE & OS
 .DS_Store
 Thumbs.db
-
+.idea/
+.vscode/
