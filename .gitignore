@@ -4,5 +4,9 @@ dist/
 hooks/
 uploads/
 *.log
+*.zip
+*.bin
+*.exe
 .DS_Store
 Thumbs.db
+

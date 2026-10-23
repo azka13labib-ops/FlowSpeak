@@ -129,7 +129,33 @@ app.post('/api/evaluate', async (req, res) => {
     return res.status(400).json({ error: 'Request body must include a non-empty "transcript" string.' });
   }
 
-  const prompt = `You are a strict English tutor evaluating a student's speech transcript. Analyze the text for grammatical errors, vocabulary usage, and fluency. You MUST respond ONLY with a valid JSON object. Evaluate this transcript: '${transcript}'. Your JSON output must match this structure exactly: { "score": { "fluency": 0, "grammar": 0, "vocabulary": 0, "overall": 0 }, "corrections": [ { "original": "...", "fixed": "...", "explanation": "... (in Indonesian)" } ], "vocabulary_tips": [ "... (in Indonesian)" ] }`;
+  const prompt = `You are an expert English teacher evaluating an Indonesian student's spoken English transcript.
+Analyze the transcript for grammatical errors, vocabulary usage, and fluency.
+Grade fluency, grammar, vocabulary, and overall score as numbers from 0 to 100 (where 100 is native fluency, 70-85 is good intermediate).
+Explain corrections and vocabulary tips in Indonesian (Bahasa Indonesia).
+
+Transcript to evaluate:
+"${transcript}"
+
+You MUST respond ONLY with a valid JSON object matching this exact schema:
+{
+  "score": {
+    "fluency": <number between 0-100>,
+    "grammar": <number between 0-100>,
+    "vocabulary": <number between 0-100>,
+    "overall": <number between 0-100>
+  },
+  "corrections": [
+    {
+      "original": "<original error substring or clause>",
+      "fixed": "<corrected clause>",
+      "explanation": "<penjelasan perbaikan dalam bahasa Indonesia>"
+    }
+  ],
+  "vocabulary_tips": [
+    "<saran kata atau frasa yang lebih baik dalam bahasa Indonesia>"
+  ]
+}`;
 
   try {
     console.log(`[Evaluate] Sending ${transcript.length} chars to Ollama...`);
@@ -160,6 +186,17 @@ app.post('/api/evaluate', async (req, res) => {
         error: 'Ollama returned an invalid JSON response.',
         raw: rawResponse,
       });
+    }
+
+    // Defensive normalization: ensure scores are clean integers between 0 and 100
+    if (evaluation?.score) {
+      for (const k of ['fluency', 'grammar', 'vocabulary', 'overall']) {
+        let val = Number(evaluation.score[k]);
+        if (isNaN(val)) val = 70;
+        // If model output 1-10 scale, convert to 10-100
+        if (val > 0 && val <= 10) val = val * 10;
+        evaluation.score[k] = Math.min(100, Math.max(0, Math.round(val)));
+      }
     }
 
     console.log('[Evaluate] Score:', evaluation?.score);
