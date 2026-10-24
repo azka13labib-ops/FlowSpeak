@@ -12,11 +12,15 @@ const FormData  = require('form-data');
 const fs        = require('fs');
 const path      = require('path');
 
+const cors        = require('cors');
+const { execFile }  = require('child_process');
+
 // ─── App Setup ───────────────────────────────────────────────────────────────
 
 const app  = express();
 const PORT = 3000;
 
+app.use(cors());
 app.use(express.json());
 
 // ─── Multer – store uploads in /uploads, accept only audio files ─────────────
@@ -30,11 +34,16 @@ const storage = multer.diskStorage({
 });
 
 const audioFilter = (_req, file, cb) => {
-  const allowed = ['audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/webm', 'audio/mp4', 'audio/x-m4a'];
-  if (allowed.includes(file.mimetype) || file.originalname.match(/\.(wav|mp3|ogg|webm|m4a)$/i)) {
+  const allowed = [
+    'audio/wav', 'audio/x-wav', 'audio/wave',
+    'audio/mpeg', 'audio/mp3', 'audio/ogg',
+    'audio/webm', 'audio/mp4', 'audio/x-m4a', 'audio/m4a', 'audio/aac', 'audio/3gpp',
+    'application/octet-stream'
+  ];
+  if (allowed.includes(file.mimetype) || file.originalname.match(/\.(wav|mp3|ogg|webm|m4a|aac|3gp|caf)$/i)) {
     cb(null, true);
   } else {
-    cb(new Error('Unsupported audio format'), false);
+    cb(new Error(`Unsupported audio format: ${file.mimetype}`), false);
   }
 };
 
@@ -43,6 +52,17 @@ const upload = multer({
   fileFilter: audioFilter,
   limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB cap
 });
+
+// ─── Helper: convert any audio to 16kHz mono WAV for Whisper.cpp ────────────
+
+function convertTo16kWav(inputPath, outputPath) {
+  return new Promise((resolve, reject) => {
+    execFile('ffmpeg', ['-y', '-i', inputPath, '-ar', '16000', '-ac', '1', '-c:a', 'pcm_s16le', outputPath], (error) => {
+      if (error) return reject(error);
+      resolve(outputPath);
+    });
+  });
+}
 
 // ─── Helper: garbage-collect a temp file safely ──────────────────────────────
 
@@ -67,6 +87,7 @@ function cleanupFile(filePath) {
  */
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   const tempPath = req.file?.path;
+  let targetWavPath = null;
 
   if (!req.file) {
     return res.status(400).json({ error: 'No audio file received. Use field name "audio".' });
@@ -75,11 +96,15 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   try {
     console.log(`[Transcribe] Received: ${req.file.originalname} (${req.file.size} bytes)`);
 
+    // Ensure 16kHz mono WAV format for Whisper.cpp
+    targetWavPath = path.join(UPLOAD_DIR, `conv-${Date.now()}.wav`);
+    await convertTo16kWav(tempPath, targetWavPath);
+
     // Build multipart payload for Whisper.cpp /inference endpoint
     const form = new FormData();
-    form.append('file', fs.createReadStream(tempPath), {
-      filename: req.file.originalname,
-      contentType: req.file.mimetype,
+    form.append('file', fs.createReadStream(targetWavPath), {
+      filename: 'audio.wav',
+      contentType: 'audio/wav',
     });
     // Whisper.cpp server-side options (adjust as needed)
     form.append('temperature',   '0.0');
@@ -109,8 +134,9 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
     return res.status(500).json({ error: err.message });
 
   } finally {
-    // Always clean up — even if an error occurred
+    // Always clean up both original and converted temp files
     cleanupFile(tempPath);
+    cleanupFile(targetWavPath);
   }
 });
 
