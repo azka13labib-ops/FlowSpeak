@@ -137,23 +137,24 @@ export default function App() {
   // ── API: Transcribe ────────────────────────────────────────────────────────
   const transcribeAudio = async (uri: string): Promise<string | null> => {
     try {
-      const filename = uri.split('/').pop() ?? 'audio.m4a';
-      const formData = new FormData();
-      formData.append('audio', { uri, name: filename, type: 'audio/m4a' } as any);
-
-      const res = await fetch(TRANSCRIBE, {
-        method:  'POST',
-        body:    formData,
-        headers: { Accept: 'application/json' },
+      console.log('Transcribing audio from:', uri, 'to:', TRANSCRIBE);
+      const uploadRes = await FileSystem.uploadAsync(TRANSCRIBE, uri, {
+        fieldName:  'audio',
+        httpMethod: 'POST',
+        uploadType: 1 as any, // FileSystemUploadType.MULTIPART
       });
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        Alert.alert('Transcription Error', json.error ?? `HTTP ${res.status}`);
+
+      console.log('Upload response status:', uploadRes.status, 'body:', uploadRes.body);
+      const json = JSON.parse(uploadRes.body);
+
+      if (uploadRes.status >= 400 || json.error) {
+        Alert.alert('Transcription Error', json.error ?? `HTTP ${uploadRes.status}`);
         return null;
       }
       return json.transcript ?? null;
     } catch (e: any) {
-      Alert.alert('Connection Error', 'Cannot reach the FlowSpeak server.\nCheck that the backend is running and LOCAL_IP is correct in src/config.ts.');
+      console.error('Transcribe upload error:', e);
+      Alert.alert('Connection Error', `Cannot connect to server at ${TRANSCRIBE}.\nDetails: ${e.message}`);
       return null;
     }
   };
