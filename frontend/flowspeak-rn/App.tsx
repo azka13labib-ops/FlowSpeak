@@ -18,7 +18,8 @@ import {
   Platform,
 } from 'react-native';
 import { useAudioRecorder, AudioModule, RecordingPresets } from 'expo-audio';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
+import { FileSystemUploadType } from 'expo-file-system/legacy';
 
 import { TRANSCRIBE, EVALUATE } from './src/config';
 import type { EvaluationResult, Correction } from './src/types';
@@ -141,7 +142,7 @@ export default function App() {
       const uploadRes = await FileSystem.uploadAsync(TRANSCRIBE, uri, {
         fieldName:  'audio',
         httpMethod: 'POST',
-        uploadType: 1 as any, // FileSystemUploadType.MULTIPART
+        uploadType: FileSystemUploadType.MULTIPART,
       });
 
       console.log('Upload response status:', uploadRes.status, 'body:', uploadRes.body);
