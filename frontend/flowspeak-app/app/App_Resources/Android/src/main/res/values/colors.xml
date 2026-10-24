@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <!-- Primary brand colors surfaced to Android system UI -->
-    <color name="ns_primary">#7c3aed</color>
-    <color name="ns_primaryDark">#5b21b6</color>
-    <color name="ns_accent">#06b6d4</color>
-    <color name="ns_background">#0d0d1a</color>
-    <color name="ns_white">#FFFFFF</color>
-</resources>
