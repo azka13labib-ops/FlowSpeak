@@ -1,9 +1,12 @@
-import { Platform } from 'react-native';
+export const API_PORT = 3000;
 
-// PC Wi-Fi LAN IP (works for physical phones on same Wi-Fi as well as emulators)
-export const LOCAL_IP   = '192.168.1.3';
-export const API_PORT   = 3000;
-export const BASE_URL   = `http://${LOCAL_IP}:${API_PORT}`;
-export const TRANSCRIBE = `${BASE_URL}/api/transcribe`;
-export const EVALUATE   = `${BASE_URL}/api/evaluate`;
+// Automatic fallback: 127.0.0.1 works over USB (adb reverse), 192.168.1.3 works over Wi-Fi LAN
+export const IP_CANDIDATES = ['127.0.0.1', '192.168.1.3'];
 
+export function getTranscribeUrl(ip: string): string {
+  return `http://${ip}:${API_PORT}/api/transcribe`;
+}
+
+export function getEvaluateUrl(ip: string): string {
+  return `http://${ip}:${API_PORT}/api/evaluate`;
+}
