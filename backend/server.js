@@ -23,8 +23,6 @@ const PORT = 3000;
 app.use(cors());
 app.use(express.json());
 
-// ─── Multer – store uploads in /uploads, accept only audio files ─────────────
-
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 
@@ -50,10 +48,8 @@ const audioFilter = (_req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter: audioFilter,
-  limits: { fileSize: 25 * 1024 * 1024 }, // 25 MB cap
+  limits: { fileSize: 25 * 1024 * 1024 }, 
 });
-
-// ─── Helper: convert any audio to 16kHz mono WAV for Whisper.cpp ────────────
 
 function convertTo16kWav(inputPath, outputPath) {
   return new Promise((resolve, reject) => {
@@ -63,8 +59,6 @@ function convertTo16kWav(inputPath, outputPath) {
     });
   });
 }
-
-// ─── Helper: garbage-collect a temp file safely ──────────────────────────────
 
 function cleanupFile(filePath) {
   if (!filePath) return;
@@ -77,14 +71,6 @@ function cleanupFile(filePath) {
   });
 }
 
-// ─── POST /api/transcribe ────────────────────────────────────────────────────
-/**
- * Accepts: multipart/form-data with field "audio"
- * Returns: { transcript: string }
- *
- * Pipes the audio file to Whisper.cpp server, returns the raw transcript,
- * then immediately deletes the local temp file (no disk residue).
- */
 app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
   const tempPath = req.file?.path;
   let targetWavPath = null;
@@ -151,54 +137,74 @@ app.post('/api/transcribe', upload.single('audio'), async (req, res) => {
 app.post('/api/evaluate', async (req, res) => {
   const { transcript } = req.body;
 
-  if (!transcript || typeof transcript !== 'string' || transcript.trim() === '') {
-    return res.status(400).json({ error: 'Request body must include a non-empty "transcript" string.' });
+  const cleanTranscript = (transcript || '').replace(/\[BLANK_AUDIO\]/gi, '').trim();
+  if (!cleanTranscript) {
+    return res.status(400).json({ error: 'No spoken audio detected in recording.' });
   }
 
   const prompt = `You are an expert English teacher evaluating an Indonesian student's spoken English transcript.
-Analyze the transcript for grammatical errors, vocabulary usage, and fluency.
-Grade fluency, grammar, vocabulary, and overall score as numbers from 0 to 100 (where 100 is native fluency, 70-85 is good intermediate).
-Explain corrections and vocabulary tips in Indonesian (Bahasa Indonesia).
+    Analyze the transcript for grammatical errors, vocabulary usage, and fluency.
+    Grade fluency, grammar, vocabulary, and overall score as numbers from 0 to 100 (where 100 is native fluency, 70-85 is good intermediate).
+    Explain corrections and vocabulary tips in Indonesian (Bahasa Indonesia).
 
-Transcript to evaluate:
-"${transcript}"
+    Transcript to evaluate:
+    "${cleanTranscript}"
 
-You MUST respond ONLY with a valid JSON object matching this exact schema:
-{
-  "score": {
-    "fluency": <number between 0-100>,
-    "grammar": <number between 0-100>,
-    "vocabulary": <number between 0-100>,
-    "overall": <number between 0-100>
-  },
-  "corrections": [
+    You MUST respond ONLY with a valid JSON object matching this exact schema:
     {
-      "original": "<original error substring or clause>",
-      "fixed": "<corrected clause>",
-      "explanation": "<penjelasan perbaikan dalam bahasa Indonesia>"
-    }
-  ],
-  "vocabulary_tips": [
-    "<saran kata atau frasa yang lebih baik dalam bahasa Indonesia>"
-  ]
-}`;
+      "score": {
+        "fluency": <number between 0-100>,
+        "grammar": <number between 0-100>,
+        "vocabulary": <number between 0-100>,
+        "overall": <number between 0-100>
+      },
+      "corrections": [
+        {
+          "original": "<original error substring or clause>",
+          "fixed": "<corrected clause>",
+          "explanation": "<penjelasan perbaikan dalam bahasa Indonesia>"
+        }
+      ],
+      "vocabulary_tips": [
+        "<saran kata atau frasa yang lebih baik dalam bahasa Indonesia>"
+      ]
+    }`;
 
   try {
-    console.log(`[Evaluate] Sending ${transcript.length} chars to Ollama...`);
+    console.log(`[Evaluate] Sending ${cleanTranscript.length} chars to Ollama...`);
 
-    const ollamaRes = await axios.post(
-      'http://127.0.0.1:11434/api/generate',
-      {
-        model:  'llama3.2:1b',
-        prompt,
-        stream: false,
-        format: 'json',
-      },
-      {
-        headers: { 'Content-Type': 'application/json' },
-        timeout: 120_000, // LLM on CPU can be slow — allow 2 min
-      }
-    );
+    let ollamaRes;
+    try {
+      ollamaRes = await axios.post(
+        'http://127.0.0.1:11434/api/generate',
+        {
+          model:  'llama3.2:1b',
+          prompt,
+          stream: false,
+          format: 'json',
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 120_000, // LLM on CPU can be slow — allow 2 min
+        }
+      );
+    } catch (firstErr) {
+      console.warn(`[Evaluate] First Ollama attempt failed (${firstErr.message}), retrying once...`);
+      await new Promise(r => setTimeout(r, 1500));
+      ollamaRes = await axios.post(
+        'http://127.0.0.1:11434/api/generate',
+        {
+          model:  'llama3.2:1b',
+          prompt,
+          stream: false,
+          format: 'json',
+        },
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 120_000,
+        }
+      );
+    }
 
     // Ollama wraps the model's output in { response: "..." }
     const rawResponse = ollamaRes.data?.response;

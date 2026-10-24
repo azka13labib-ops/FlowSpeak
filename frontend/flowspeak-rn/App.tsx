@@ -119,9 +119,19 @@ export default function App() {
       const tx = await transcribeAudio(uri);
       if (!tx) { setState('idle'); return; }
 
-      setTranscript(tx);
+      const clean = tx.replace(/\[BLANK_AUDIO\]/gi, '').trim();
+      if (!clean) {
+        Alert.alert(
+          'Tidak Ada Ucapan',
+          'Tidak ada suara atau percakapan yang terdeteksi. Pastikan kamu berbicara dengan jelas ke mikrofon lalu tekan Stop.'
+        );
+        setState('idle');
+        return;
+      }
+
+      setTranscript(clean);
       setState('idle');
-      evaluateTranscript(tx);   // fire-and-forget — shows its own spinner
+      evaluateTranscript(clean);   // fire-and-forget — shows its own spinner
     } catch (e: any) {
       Alert.alert('Error', e.message);
       setState('idle');
@@ -169,11 +179,11 @@ export default function App() {
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
         body:    JSON.stringify({ transcript: tx }),
       });
-      const json: EvaluationResult = await res.json();
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      setResult(json);
+      const json = await res.json();
+      if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+      setResult(json as EvaluationResult);
     } catch (e: any) {
-      Alert.alert('AI Error', 'Could not reach the evaluator. Make sure Ollama is running.');
+      Alert.alert('AI Error', e.message || 'Could not reach the evaluator. Make sure Ollama is running.');
     } finally {
       setIsAnalyzing(false);
     }
